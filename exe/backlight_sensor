@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'pathname'
+
+SOURCE_FILE = Pathname.new(__FILE__)
+$LOAD_PATH.unshift(SOURCE_FILE.join('..', '..', 'lib').expand_path.to_s)
+
+require 'backlight_sensor'
+
+options = {
+  input_min:  0,
+  input_max:  4,
+  output_min: 10,
+  output_max: 100,
+  delay:      60,
+  report:     false,
+  path:       '/dev/cu.usbmodem1431'
+}
+
+option_parser = OptionParser.new do |parser|
+  parser.banner = "Usage: #{SOURCE_FILE.basename} [options]"
+
+  parser.on('--input-min VALUE', Integer, 'How bright it is during night') do |value|
+    options[:input_min] = value
+  end
+
+  parser.on('--input-max VALUE', Integer, 'How bright it is during day') do |value|
+    options[:input_max] = value
+  end
+
+  parser.on('--output-min VALUE', Integer, 'How bright the screen is during night') do |value|
+    options[:output_min] = value
+  end
+
+  parser.on('--output-max VALUE', Integer, 'How bright the screen is during day') do |value|
+    options[:output_max] = value
+  end
+
+  parser.on('-r', '--report', 'Report the current sensor value') do
+    options[:report] = true
+  end
+
+  parser.on('-d', '--delay VALUE', Integer, 'The delay bewteen report checks in seconds') do |value|
+    options[:delay] = value
+  end
+
+  parser.on('-p', '--path VALUE', 'The path to the USB device file') do |value|
+    value = Pathname.new(value.strip)
+    raise "Path #{value} does not exist" unless value.exist?
+
+
+    options[:path] = value
+  end
+
+  parser.on('-h', '--help', 'Prints this help') do
+    puts parser
+
+    exit
+  end
+end
+
+option_parser.parse!
+
+calibration = options.values_at(:input_min, :input_max, :output_min, :output_max)
+
+BacklightSensor::Controller.open(options[:path]) do |controller|
+  if options[:report]
+    input_value = controller.read
+
+    puts input_value
+  else
+    loop do
+      input_value = controller.read
+      output_value = input_value.scale_between(*calibration)
+      output_value = options[:output_max] if output_value > options[:output_max]
+
+      command = "xbacklight -set #{output_value}"
+
+      puts command
+
+      sleep(options[:delay])
+    end
+  end
+end
