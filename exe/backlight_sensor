@@ -2,6 +2,7 @@
 
 require 'optparse'
 require 'pathname'
+require 'logger'
 
 SOURCE_FILE = Pathname.new(__FILE__)
 $LOAD_PATH.unshift(SOURCE_FILE.join('..', '..', 'lib').expand_path.to_s)
@@ -21,19 +22,19 @@ options = {
 option_parser = OptionParser.new do |parser|
   parser.banner = "Usage: #{SOURCE_FILE.basename} [options]"
 
-  parser.on('--input-min VALUE', Integer, 'How bright it is during night') do |value|
+  parser.on('--input-min VALUE', Integer, "How bright it is during night (default: #{options[:input_min]})") do |value|
     options[:input_min] = value
   end
 
-  parser.on('--input-max VALUE', Integer, 'How bright it is during day') do |value|
+  parser.on('--input-max VALUE', Integer, "How bright it is during day (default: #{options[:input_max]})") do |value|
     options[:input_max] = value
   end
 
-  parser.on('--output-min VALUE', Integer, 'How bright the screen is during night') do |value|
+  parser.on('--output-min VALUE', Integer, "How bright the screen is during night (default: #{options[:output_min]})") do |value|
     options[:output_min] = value
   end
 
-  parser.on('--output-max VALUE', Integer, 'How bright the screen is during day') do |value|
+  parser.on('--output-max VALUE', Integer, "How bright the screen is during day (default: #{options[:output_max]})") do |value|
     options[:output_max] = value
   end
 
@@ -41,11 +42,11 @@ option_parser = OptionParser.new do |parser|
     options[:report] = true
   end
 
-  parser.on('-d', '--delay VALUE', Integer, 'The delay bewteen report checks in seconds') do |value|
+  parser.on('-d', '--delay VALUE', Integer, "The delay bewteen report checks in seconds (default: #{options[:delay]})") do |value|
     options[:delay] = value
   end
 
-  parser.on('-p', '--path VALUE', 'The path to the USB device file') do |value|
+  parser.on('-p', '--path VALUE', "The path to the USB device file (default: #{options[:path]})") do |value|
     value = Pathname.new(value.strip)
     raise "Path #{value} does not exist" unless value.exist?
 
@@ -62,7 +63,9 @@ end
 
 option_parser.parse!
 
-calibration = options.values_at(:input_min, :input_max, :output_min, :output_max)
+logger        = Logger.new(STDOUT)
+calibration   = options.values_at(:input_min, :input_max, :output_min, :output_max)
+current_value = nil
 
 BacklightSensor::Controller.open(options[:path]) do |controller|
   if options[:report]
@@ -71,13 +74,20 @@ BacklightSensor::Controller.open(options[:path]) do |controller|
     puts input_value
   else
     loop do
-      input_value = controller.read
-      output_value = input_value.scale_between(*calibration)
-      output_value = options[:output_max] if output_value > options[:output_max]
+      input_value  = controller.read
+      logger.info("Report - Sensor value: #{input_value}")
 
-      command = "xbacklight -set #{output_value}"
+      if current_value != input_value
+        output_value = input_value.scale_between(*calibration)
+        output_value = options[:output_max] if output_value > options[:output_max]
 
-      puts command
+        command = "xbacklight -set #{output_value} -time #{options[:delay] * 1000} -steps 100"
+
+        logger.info("Command: #{command}")
+        system(command)
+
+        current_value = input_value
+      end
 
       sleep(options[:delay])
     end
