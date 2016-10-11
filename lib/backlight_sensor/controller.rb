@@ -12,6 +12,7 @@ module BacklightSensor
     # @param [String] path The path to the USB device
     def open(path, &block)
       @io = File.open(path, 'r+') # TODO: r+ will create the file if it doesn't exist =( Do a exists? check before this and simply return nil? Or raise error? I hate errorrrs
+      sleep(0.1) until !@io.eof?
 
       @io.readbyte # Sync
 
@@ -36,6 +37,7 @@ module BacklightSensor
     # @return [Integer]
     def read
       @io.write(?r) # Read command
+      sleep(0.1) until !@io.eof?
 
       @io.readbyte
     end
